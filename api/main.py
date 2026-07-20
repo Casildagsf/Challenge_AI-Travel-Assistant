@@ -1,8 +1,7 @@
 """FastAPI wrapper around travel_assistant.py.
 
-The Gradio app (app.py) and this API call the exact same functions. Gradio holds
-them in one process; this exposes them over HTTP so a React front end can use
-them from anywhere.
+travel_assistant.py holds the logic and knows nothing about the web; this
+exposes it over HTTP so the React front end can use it from anywhere.
 
 Run locally:
     uvicorn api.main:app --reload
@@ -21,7 +20,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-# travel_assistant.py sits one level up, next to app.py. Make it importable
+# travel_assistant.py sits one level up, at the repo root. Make it importable
 # whether uvicorn is started from the repo root or from inside api/.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
