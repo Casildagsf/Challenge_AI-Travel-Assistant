@@ -1,0 +1,163 @@
+:root {
+  --bg: #f6f5f2;
+  --card: #ffffff;
+  --ink: #1e1c1a;
+  --muted: #6b6560;
+  --line: #e4dfd8;
+  --accent: #b4552b;
+  --accent-ink: #ffffff;
+  --error-bg: #fdecea;
+  --error-ink: #8d2318;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17161a;
+    --card: #201f24;
+    --ink: #ece9e4;
+    --muted: #9b948c;
+    --line: #322f36;
+    --accent: #d97445;
+    --accent-ink: #17161a;
+    --error-bg: #3a1e1b;
+    --error-ink: #f3b0a6;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.page {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 4rem;
+}
+
+.site-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+h1 { font-size: 1.8rem; margin: 0 0 .25rem; }
+h2 { font-size: 1.35rem; margin: 0 0 .5rem; }
+h3 { font-size: 1.05rem; margin: 0 0 .5rem; }
+
+.tagline { color: var(--muted); margin: 0 0 1.5rem; }
+.muted { color: var(--muted); }
+.small { font-size: .875rem; }
+.lede { font-size: 1.05rem; }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+/* ---- forms ---- */
+label { display: block; margin-bottom: .9rem; font-weight: 600; font-size: .9rem; }
+input, select {
+  display: block;
+  width: 100%;
+  margin-top: .3rem;
+  padding: .55rem .7rem;
+  font: inherit;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.row { display: flex; gap: .75rem; flex-wrap: wrap; }
+.row > label { flex: 1 1 12rem; }
+
+fieldset {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: .9rem 1rem;
+  margin: 0 0 1rem;
+}
+legend { font-weight: 600; font-size: .9rem; padding: 0 .4rem; }
+
+.city-row { align-items: center; margin-bottom: .5rem; }
+.city-row input { margin-top: 0; }
+.city-row input:first-child { flex: 1 1 10rem; width: auto; }
+.nights { width: 5rem !important; flex: 0 0 5rem; }
+.unit { font-size: .875rem; color: var(--muted); }
+
+button {
+  font: inherit;
+  cursor: pointer;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink);
+  padding: .5rem .9rem;
+}
+button:disabled { opacity: .5; cursor: not-allowed; }
+
+button.primary {
+  width: 100%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+  font-weight: 600;
+  padding: .75rem;
+}
+
+button.linkish {
+  border: none;
+  background: none;
+  color: var(--accent);
+  padding: 0;
+  font-size: .875rem;
+  text-decoration: underline;
+}
+
+/* ---- unlock ---- */
+.unlock { max-width: 26rem; padding-top: 6rem; text-align: center; }
+.unlock form { display: flex; gap: .5rem; margin-top: 1rem; }
+.unlock input { margin-top: 0; }
+
+/* ---- states ---- */
+.error {
+  background: var(--error-bg);
+  color: var(--error-ink);
+  border-radius: 10px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+.error p { margin: .4rem 0 0; font-family: ui-monospace, monospace; font-size: .85rem; }
+.error-inline { color: var(--error-ink); font-size: .875rem; }
+
+.loading { text-align: center; padding: 2rem 0; }
+.spinner {
+  width: 32px; height: 32px; margin: 0 auto 1rem;
+  border: 3px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
+
+/* ---- result ---- */
+.result { margin-top: 1.5rem; }
+.day .theme { color: var(--muted); font-style: italic; margin: 0 0 .5rem; }
+.day ul, .facts ul { padding-left: 1.1rem; margin: .5rem 0; }
+.day li, .facts li { margin-bottom: .35rem; }
+.eat { font-size: .9rem; border-top: 1px solid var(--line); padding-top: .6rem; }
+.budget { list-style: none; padding: 0; }
+.budget li { margin-bottom: .25rem; }
+.cost { text-align: center; }

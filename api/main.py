@@ -98,11 +98,34 @@ class TripResponse(BaseModel):
     facts: dict
     usage: list
     cost_report_markdown: str
+    # Numbers, not markdown: the front end should never have to parse a table
+    # to show a total.
+    total_tokens: int
+    cost_usd: float
+    cost_eur: float
+
+
+def _cost(usage):
+    """Same arithmetic as travel_assistant.usage_report_md, but as numbers."""
+    tokens = sum(r["input"] + r["output"] for r in usage)
+    usd = sum(
+        r["input"] / 1e6 * ta.PRICES[r["model"]]["input"]
+        + r["output"] / 1e6 * ta.PRICES[r["model"]]["output"]
+        for r in usage if r["model"] in ta.PRICES
+    )
+    return tokens, round(usd, 4), round(usd * ta.EUR_PER_USD, 4)
 
 
 # ---------------------------------------------------------------------------
 # endpoints
 # ---------------------------------------------------------------------------
+@app.get("/")
+def root():
+    """A bare URL should explain itself rather than 404."""
+    return {"service": "AI Travel Advisor API",
+            "docs": "/docs", "health": "/health", "plan": "POST /plan"}
+
+
 @app.get("/health")
 def health():
     """Cheap endpoint that touches no models. Use it to check a deploy is alive."""
@@ -128,10 +151,14 @@ def plan(trip: TripRequest):
         raise HTTPException(status_code=502,
                             detail=f"{type(e).__name__}: {e}") from e
 
+    tokens, usd, eur = _cost(usage)
     return TripResponse(
         itinerary_markdown=itinerary,
         summary=summary,
         facts=facts,
         usage=usage,
         cost_report_markdown=ta.usage_report_md(usage),
+        total_tokens=tokens,
+        cost_usd=usd,
+        cost_eur=eur,
     )
