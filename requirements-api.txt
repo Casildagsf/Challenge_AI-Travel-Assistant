@@ -1,0 +1,10 @@
+# Backend only. Deliberately does NOT include gradio: the API has no UI, and
+# gradio is a large, slow install on Render's free tier.
+# The Gradio app / Hugging Face Space keeps using requirements.txt.
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.7
+openai>=2.0
+requests>=2.31
+Babel>=2.14
+python-dotenv>=1.0
