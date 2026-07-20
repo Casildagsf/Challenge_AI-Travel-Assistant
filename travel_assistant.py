@@ -111,6 +111,61 @@ def chat_turn(context, user_message, usage):
     return reply, "RECAP:" in reply
 
 
+CITY_PICKER_PROMPT = """You are planning the shape of a trip, not the trip itself.
+
+The traveller knows the country and how long they have, but not which cities to
+base themselves in. Choose the bases and split the nights between them.
+
+Trip: {days} days in {where}.
+Interests: {interests}
+Travelling: {who}
+Constraints: {constraints}
+
+Rules:
+- Choose CITIES OR TOWNS people actually sleep in. Never regions or provinces.
+- Fewer bases is usually better: roughly one base per 3-4 nights, at most 4.
+- Order them as a sensible route, not alphabetically.
+- Do not move base for a single night.
+- The nights MUST sum to exactly {days}.
+
+Return only a JSON object mapping city name to nights, e.g.
+{{"Edinburgh": 5, "Inverness": 4, "Glasgow": 5}}
+"""
+
+
+def propose_cities(recap, usage, model=PLANNER_MODEL):
+    """Pick bases and split the nights when the traveller has not chosen.
+
+    Returns a {city: nights} dict summing to recap["days"]. The model only
+    proposes the split; build_day_plan still owns the day-by-day allocation,
+    and the sum is corrected here rather than trusted.
+    """
+    days = recap["days"]
+    where = ", ".join(x for x in (recap.get("destination"), recap.get("country")) if x)
+    raw = complete(
+        [{"role": "user", "content": CITY_PICKER_PROMPT.format(
+            days=days, where=where or "somewhere the traveller has not named",
+            interests=_interests_text(recap) or "not specified",
+            who=recap.get("travelling_as") or "not specified",
+            constraints=recap.get("constraints") or "none")}],
+        usage, model=model, temperature=0)
+
+    start = raw.find("{")
+    if start == -1:
+        raise ValueError("The planner did not return a city split:\n" + raw)
+    split, _ = json.JSONDecoder().raw_decode(raw[start:])
+    split = {str(c): int(n) for c, n in split.items() if int(n) > 0}
+    if not split:
+        raise ValueError("The planner returned no cities.")
+
+    # Never trust the arithmetic: absorb any difference into the longest stay.
+    drift = days - sum(split.values())
+    if drift:
+        longest = max(split, key=split.get)
+        split[longest] = max(1, split[longest] + drift)
+    return split
+
+
 def parse_recap(reply):
     """Pull the RECAP JSON out of a collector reply. Tolerates ``` fences."""
     if "RECAP:" not in reply:
@@ -136,14 +191,27 @@ def geocode(city, country=None):
         raise ValueError(f"could not geocode {city!r}")
     if country:
         want = country.strip().lower()
+        # Also match admin1, the region field. People say "Scotland", "Bavaria"
+        # or "Catalonia" when asked for a country, and those are real answers -
+        # they are just one level down from the one the API indexes by.
         in_country = [h for h in hits
                       if (h.get("country") or "").lower() == want
-                      or (h.get("country_code") or "").lower() == want]
+                      or (h.get("country_code") or "").lower() == want
+                      or (h.get("admin1") or "").lower() == want]
         if not in_country:
             found = ", ".join(sorted({h.get("country") or "?" for h in hits}))
             raise ValueError(f"{city!r} was not found in {country!r} "
                              f"(only in: {found}). Is it a region rather than a city?")
         hits = in_country
+
+    # Open-Meteo also returns countries and provinces, and their "population"
+    # dwarfs any city's - "Santo Domingo" was resolving to the country entity
+    # (PCLI, 10.6M) instead of the capital (PPLC, 2.2M), giving weather for a
+    # point nowhere near the city. Populated places only, when there are any.
+    places = [h for h in hits if (h.get("feature_code") or "").startswith("PPL")]
+    if places:
+        hits = places
+
     hits.sort(key=lambda h: h.get("population") or 0, reverse=True)
     h = hits[0]
     return {"name": h["name"], "lat": h["latitude"], "lon": h["longitude"],
@@ -177,6 +245,32 @@ def get_weather(city, month, country=None):
             "source": f"Open-Meteo archive, {y0}-{y1} average"}
 
 
+def _rate_from_frankfurter(cur):
+    """ECB reference rates: authoritative, but only ~30 major currencies."""
+    r = requests.get("https://api.frankfurter.dev/v1/latest",
+                     params={"base": cur, "symbols": "EUR"}, timeout=20)
+    if r.status_code != 200:
+        return None
+    j = r.json()
+    if "EUR" not in j.get("rates", {}):
+        return None
+    return {"eur_per_unit": j["rates"]["EUR"], "as_of": j.get("date"),
+            "source": "European Central Bank via Frankfurter"}
+
+
+def _rate_from_open_er(cur):
+    """Fallback with ~160 currencies, for everything the ECB does not publish."""
+    r = requests.get(f"https://open.er-api.com/v6/latest/{cur}", timeout=20)
+    if r.status_code != 200:
+        return None
+    j = r.json()
+    if j.get("result") != "success" or "EUR" not in j.get("rates", {}):
+        return None
+    return {"eur_per_unit": j["rates"]["EUR"],
+            "as_of": (j.get("time_last_update_utc") or "")[:16],
+            "source": "open.er-api.com"}
+
+
 def get_exchange_rate(country_code):
     codes = get_territory_currencies(country_code)
     if not codes:
@@ -185,13 +279,20 @@ def get_exchange_rate(country_code):
     if cur == "EUR":
         return {"currency": "EUR", "eur_per_unit": 1.0,
                 "note": "destination already uses EUR, no conversion needed"}
-    r = requests.get("https://api.frankfurter.app/latest",
-                     params={"from": cur, "to": "EUR"}, timeout=20)
-    if r.status_code != 200 or "EUR" not in r.json().get("rates", {}):
-        return {"currency": cur, "eur_per_unit": None,
-                "note": f"frankfurter has no EUR rate for {cur}"}
-    j = r.json()
-    return {"currency": cur, "eur_per_unit": j["rates"]["EUR"], "as_of": j["date"]}
+
+    # Try the ECB first, then a broader source. Currencies like DOP, THB or
+    # EGP are not in the ECB reference set, and a missing rate used to leave
+    # the planner with no idea what anything costs.
+    for lookup in (_rate_from_frankfurter, _rate_from_open_er):
+        try:
+            hit = lookup(cur)
+        except Exception:
+            hit = None          # a dead provider must not kill the whole trip
+        if hit:
+            return {"currency": cur, **hit}
+
+    return {"currency": cur, "eur_per_unit": None,
+            "note": f"no EUR rate available for {cur} from either provider"}
 
 
 def get_transport(city_a, city_b, mode, usage):
@@ -362,8 +463,15 @@ Return only the JSON object, with this shape:
              "do": [str]} ],
   "tips": [str],
   "estimated_budget": {"lodging": str, "food": str,
-                       "activities": str, "transport": str, "total": str}
+                       "activities": str, "transport": str, "total": str,
+                       "total_eur": str or null, "rate_note": str or null}
 }
+
+For estimated_budget, copy the lines from the budget section verbatim, keeping
+the local currency code. If the itinerary has a "Total in EUR" line, put its
+amount in total_eur (e.g. "EUR 950-1500") and the bracketed rate in rate_note.
+If there is no such line - because the trip is already priced in euros - set
+both to null.
 """
 
 

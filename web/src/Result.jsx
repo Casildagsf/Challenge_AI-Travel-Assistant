@@ -4,9 +4,17 @@
  * reading, JSON is for building interfaces out of.
  */
 export default function Result({ data }) {
-  const { summary, facts, total_tokens, cost_usd, cost_eur } = data;
-  const weather = Object.values(facts.weather ?? {}).filter((w) => !w.error);
+  const { summary, facts, total_tokens, cost_usd, cost_eur,
+          nights_per_city, cities_were_suggested } = data;
+  const allWeather = Object.entries(facts.weather ?? {});
+  const weather = allWeather.map(([, w]) => w).filter((w) => !w.error);
   const currency = facts.currency;
+  // Silently hiding a failed lookup makes the itinerary look fine while the
+  // planner was actually working blind. Say so instead.
+  const failures = [
+    ...allWeather.filter(([, w]) => w.error).map(([city]) => `weather for ${city}`),
+    ...(currency?.error ? ["exchange rate"] : []),
+  ];
   const budget = summary.estimated_budget ?? {};
 
   return (
@@ -17,11 +25,26 @@ export default function Result({ data }) {
         {summary.accommodation && (
           <p className="muted">🏨 {summary.accommodation}</p>
         )}
+        {cities_were_suggested && nights_per_city && (
+          <p className="chosen">
+            📍 Bases chosen for you:{" "}
+            {Object.entries(nights_per_city)
+              .map(([city, n]) => `${city} (${n} ${n === 1 ? "night" : "nights"})`)
+              .join(" → ")}
+          </p>
+        )}
       </section>
 
-      {(weather.length > 0 || currency) && (
+      {(weather.length > 0 || currency || failures.length > 0) && (
         <section className="card facts">
           <h3>Real-world data</h3>
+          {failures.length > 0 && (
+            <p className="warn">
+              ⚠️ Could not look up {failures.join(" and ")}. The itinerary below
+              was written without {failures.length > 1 ? "them" : "it"}, so treat
+              any temperatures or prices in it as guesswork.
+            </p>
+          )}
           <ul>
             {weather.map((w) => (
               <li key={w.city}>
@@ -36,6 +59,10 @@ export default function Result({ data }) {
                 {currency.note
                   ? ` — ${currency.note}`
                   : ` — 1 ${currency.currency} ≈ €${currency.eur_per_unit}`}
+                {currency.source && (
+                  <span className="muted small"> ({currency.source}
+                    {currency.as_of ? `, ${currency.as_of}` : ""})</span>
+                )}
               </li>
             )}
             {typeof facts.transport === "string" && (
@@ -68,6 +95,14 @@ export default function Result({ data }) {
             <li>Activities: {budget.activities}</li>
             <li>Transport: {budget.transport}</li>
             <li><strong>Total: {budget.total}</strong></li>
+            {budget.total_eur && (
+              <li className="eur-total">
+                <strong>Total in EUR: {budget.total_eur}</strong>
+                {budget.rate_note && (
+                  <span className="muted small"> {budget.rate_note}</span>
+                )}
+              </li>
+            )}
           </ul>
         </section>
       )}

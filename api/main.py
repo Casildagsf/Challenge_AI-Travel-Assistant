@@ -78,18 +78,35 @@ def require_api_key(x_api_key: str | None = Header(default=None)):
 # These mirror the RECAP object the collector prompt produces in
 # travel_assistant.COLLECTOR_SYSTEM, so no translation is needed.
 class TripRequest(BaseModel):
-    destination: str = Field(..., examples=["Andalusia"])
+    # Only country, days and month are genuinely required. Everything else is
+    # optional so a traveller can say "Scotland, 14 days in May" and let the
+    # planner work out the rest.
     country: str = Field(..., description="English country name", examples=["Spain"])
     days: int = Field(..., gt=0, le=30)
-    nights_per_city: dict[str, int] = Field(
-        ..., description="City or town -> nights slept there",
-        examples=[{"Seville": 3, "Granada": 2}],
-    )
-    inter_city_transport: str = Field("train", examples=["train"])
     month: str = Field(..., examples=["September"])
+
+    destination: str | None = Field(
+        None, description="Region or area, if the traveller knows it",
+        examples=["Andalusia"])
+    nights_per_city: dict[str, int] = Field(
+        default_factory=dict,
+        description="City or town -> nights. Leave empty to have them chosen.",
+        examples=[{"Seville": 3, "Granada": 2}])
+    inter_city_transport: str | None = Field(None, examples=["train"])
+
     interests: list[str] = Field(default_factory=list,
                                  examples=[["food", "history", "flamenco"]])
-    constraints: str = Field("", examples=["travelling with a 7-year-old"])
+    constraints: str = Field("", examples=["prefer a slow pace"])
+
+    # Extra steering. These are not read by any Python code - build_itinerary
+    # dumps the whole recap into the prompt, so adding a field here is all it
+    # takes for the planner to see it.
+    travelling_as: str = Field("", examples=["a couple in their 30s"])
+    accommodation_style: str = Field("", examples=["small hotels"])
+    must_see: str = Field("", examples=["the Alhambra"])
+    avoid: str = Field("", examples=["early starts, big crowds"])
+    dietary: str = Field("", examples=["vegetarian, no shellfish"])
+    mobility: str = Field("", examples=["limited walking, no long hikes"])
 
 
 class TripResponse(BaseModel):
@@ -103,6 +120,10 @@ class TripResponse(BaseModel):
     total_tokens: int
     cost_usd: float
     cost_eur: float
+    # What the trip actually resolved to, so the front end can show the
+    # traveller which cities were picked for them.
+    nights_per_city: dict[str, int]
+    cities_were_suggested: bool
 
 
 def _cost(usage):
@@ -141,8 +162,22 @@ def plan(trip: TripRequest):
     """
     recap = trip.model_dump()
     usage = []  # one per request, so concurrent users never share a tally
+    suggested = not recap["nights_per_city"]
 
     try:
+        if suggested:
+            # The traveller named a country but no cities. Let the planner
+            # choose the bases first; build_day_plan still owns the day-by-day
+            # allocation from whatever comes back.
+            recap["nights_per_city"] = ta.propose_cities(recap, usage)
+
+        # A one-city trip has no inter-city journey. Saying so beats leaving a
+        # null in the prompt, which the planner would try to interpret.
+        if len(recap["nights_per_city"]) < 2:
+            recap["inter_city_transport"] = "not applicable - single base"
+        elif not recap["inter_city_transport"]:
+            recap["inter_city_transport"] = "train"
+
         facts = ta.gather_facts(recap, usage)
         itinerary = ta.build_itinerary(recap, facts, usage)
         summary = ta.summarise(itinerary, usage)
@@ -161,4 +196,6 @@ def plan(trip: TripRequest):
         total_tokens=tokens,
         cost_usd=usd,
         cost_eur=eur,
+        nights_per_city=recap["nights_per_city"],
+        cities_were_suggested=suggested,
     )
