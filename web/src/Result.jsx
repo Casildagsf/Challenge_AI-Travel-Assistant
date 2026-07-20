@@ -17,14 +17,23 @@ export default function Result({ data }) {
   ];
   const budget = summary.estimated_budget ?? {};
 
+  // Older responses sent a single string for the whole trip. Normalise both
+  // shapes to a list so the UI has one thing to render.
+  const stays = Array.isArray(summary.accommodation)
+    ? summary.accommodation.filter((a) => a && (a.district || a.city))
+    : summary.accommodation
+      ? [{ city: null, district: null, why: String(summary.accommodation) }]
+      : [];
+  // Number of nights per base, so each stay can say how long you're there.
+  const nightsFor = (city) =>
+    Object.entries(nights_per_city ?? {})
+      .find(([c]) => c.toLowerCase() === (city ?? "").toLowerCase())?.[1];
+
   return (
     <div className="result">
       <section className="card">
         <h2>{summary.trip_title}</h2>
         <p className="lede">{summary.trip_summary}</p>
-        {summary.accommodation && (
-          <p className="muted">🏨 {summary.accommodation}</p>
-        )}
         {cities_were_suggested && nights_per_city && (
           <p className="chosen">
             📍 Bases chosen for you:{" "}
@@ -69,6 +78,31 @@ export default function Result({ data }) {
               <li>🚆 {facts.transport}</li>
             )}
           </ul>
+        </section>
+      )}
+
+      {stays.length > 0 && (
+        <section className="card stays">
+          <h3>🏨 Where you'll stay</h3>
+          {stays.map((a, i) => {
+            const n = nightsFor(a.city);
+            return (
+              <div className="stay" key={i}>
+                {a.district && (
+                  <p className="stay-head">
+                    <span className="district">{a.district}</span>
+                    {a.city && <span className="stay-city">{a.city}</span>}
+                    {n && (
+                      <span className="stay-nights">
+                        {n} {n === 1 ? "night" : "nights"}
+                      </span>
+                    )}
+                  </p>
+                )}
+                {a.why && <p className="stay-why">{a.why}</p>}
+              </div>
+            );
+          })}
         </section>
       )}
 

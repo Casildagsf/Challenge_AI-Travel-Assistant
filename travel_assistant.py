@@ -457,7 +457,8 @@ anything. If a field is missing from the itinerary, use null.
 
 Return only the JSON object, with this shape:
 {
-  "trip_title": str, "trip_summary": str, "accommodation": str,
+  "trip_title": str, "trip_summary": str,
+  "accommodation": [ {"city": str, "district": str, "why": str} ],
   "days": [ {"day": int, "city": str, "theme": str,
              "eat": {"lunch": str, "dinner": str},
              "do": [str]} ],
@@ -466,6 +467,10 @@ Return only the JSON object, with this shape:
                        "activities": str, "transport": str, "total": str,
                        "total_eur": str or null, "rate_note": str or null}
 }
+
+For accommodation, produce one entry per line of the Accommodation section,
+in the same order as the trip. Split each line at the dash: district is the
+neighbourhood name only, city is the city it belongs to, why is the rest.
 
 For estimated_budget, copy the lines from the budget section verbatim, keeping
 the local currency code. If the itinerary has a "Total in EUR" line, put its
