@@ -79,10 +79,14 @@ export default function Result({ data }) {
         </section>
       )}
 
-      <p className="muted small cost">
-        🧾 {total_tokens.toLocaleString()} tokens — ${cost_usd.toFixed(4)} (≈ €
-        {cost_eur.toFixed(4)}) spent generating this plan.
-      </p>
+      {/* Older backends did not send these, so never assume they are there:
+          a front end should not crash because the API is one deploy behind. */}
+      {typeof total_tokens === "number" && (
+        <p className="muted small cost">
+          🧾 {total_tokens.toLocaleString()} tokens — ${cost_usd.toFixed(4)} (≈ €
+          {cost_eur.toFixed(4)}) spent generating this plan.
+        </p>
+      )}
     </div>
   );
 }
